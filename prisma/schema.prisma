@@ -1,0 +1,110 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          Int     @id @default(autoincrement())
+  name        String?
+  email       String  @unique
+  clerkUserId String  @unique // Add Clerk's userId field to link with Clerk data
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  attendances Attendance[]
+}
+
+model Faculty {
+  id   Int    @id @default(autoincrement())
+  name String
+
+  schools School[]
+}
+
+model School {
+  id        Int      @id @default(autoincrement())
+  name      String
+  faculties Faculty  @relation(fields: [facultyId], references: [id])
+  facultyId Int
+  courses   Course[]
+}
+
+model Course {
+  id        Int        @id @default(autoincrement())
+  name      String
+  code      String     @unique
+  teachers  Teacher    @relation(fields: [teacherId], references: [id])
+  teacherId Int
+  school    School     @relation(fields: [schoolId], references: [id])
+  schoolId  Int
+  schedules Schedule[]
+}
+
+model Teacher {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  courses   Course[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Room {
+  id        Int        @id @default(autoincrement())
+  name      String
+  capacity  Int
+  type      RoomType
+  schedules Schedule[]
+}
+
+model Schedule {
+  id          Int         @id @default(autoincrement())
+  course      Course      @relation(fields: [courseId], references: [id])
+  courseId    Int
+  room        Room        @relation(fields: [roomId], references: [id])
+  roomId      Int
+  date        DateTime // This will store the date of the schedule
+  startTime   DateTime // Added field to store the start time of the session
+  endTime     DateTime // Added field to store the end time of the session
+  isRecurring Boolean     @default(false) // Indicates if the schedule is recurring
+  recurrence  Recurrence? // Optional recurrence pattern (weekly or monthly)
+  createdAt   DateTime    @default(now())
+
+  attendances Attendance[]
+}
+
+model Attendance {
+  id         Int      @id @default(autoincrement())
+  user       User     @relation(fields: [userId], references: [id])
+  userId     Int
+  schedule   Schedule @relation(fields: [scheduleId], references: [id])
+  scheduleId Int
+  timestamp  DateTime @default(now()) // Capture when the attendance was recorded
+}
+
+enum RoomType {
+  LECTURE
+  LAB
+  TUTORIAL
+}
+
+enum TimeSlot {
+  MORNING
+  AFTERNOON
+  EVENING
+}
+
+enum Recurrence {
+  WEEKLY
+  MONTHLY
+}
