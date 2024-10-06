@@ -25,6 +25,9 @@ const geistMono = localFont({
 export const metadata: Metadata = {
   title: "PNGUNITECH",
   description: "PNGUNITECH PORTAL",
+  icons: {
+    icon: "/icon.jpg",
+  },
 };
 
 export default function RootLayout({

@@ -4,6 +4,20 @@ import { NextApiRequest, NextApiResponse } from 'next';
 
 const prisma = new PrismaClient();
 
+// Utility functions
+const padTime = (time: string) => time.toString().padStart(2, '0');
+
+const isValidTimeFormat = (time: string) => /^([01]\d|2[0-3]):([0-5]\d)$/.test(time);
+
+const formatTime = (date: Date) => {
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  const formattedHours = hours % 12 || 12; // Convert 0 to 12 for midnight
+  const formattedMinutes = padTime(minutes.toString());
+  return `${formattedHours}:${formattedMinutes} ${ampm}`;
+};
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === 'GET') {
     try {
@@ -13,19 +27,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           room: true,
         },
       });
-      res.status(200).json(schedules);
+
+      // Format startTime and endTime
+      const formattedSchedules = schedules.map(schedule => ({
+        ...schedule,
+        startTime: formatTime(schedule.startTime),
+        endTime: formatTime(schedule.endTime),
+      }));
+
+      res.status(200).json(formattedSchedules);
     } catch (error) {
-      console.error('Error fetching schedules:', error); // Log error
+      console.error('Error fetching schedules:', error);
       res.status(500).json({ error: 'Failed to fetch schedules' });
     }
   } else if (req.method === 'POST') {
     const { courseId, roomId, date, startTime, endTime, isRecurring, recurrence } = req.body;
 
+    // Validate input
+    if (!date || !startTime || !endTime) {
+      return res.status(400).json({ error: "Date and times must be provided." });
+    }
+    
+    if (!isValidTimeFormat(startTime) || !isValidTimeFormat(endTime)) {
+      return res.status(400).json({ error: "Invalid start or end time format." });
+    }
+
+    const formattedStartTime = `${padTime(startTime.split(':')[0])}:${padTime(startTime.split(':')[1])}:00`;
+    const formattedEndTime = `${padTime(endTime.split(':')[0])}:${padTime(endTime.split(':')[1])}:00`;
+
+    const parsedStartTime = new Date(`${date}T${formattedStartTime}`);
+    const parsedEndTime = new Date(`${date}T${formattedEndTime}`);
+
+    // Check if date conversion is valid
+    if (isNaN(parsedStartTime.getTime()) || isNaN(parsedEndTime.getTime())) {
+      return res.status(400).json({ error: "Invalid start or end time format" });
+    }
+
     try {
       // Find the course to get the teacherId for the conflict check
       const course = await prisma.course.findUnique({
         where: { id: Number(courseId) },
-        include: { teachers: true }, // Get the teacher details
+        include: { teachers: true },
       });
 
       if (!course) {
@@ -34,15 +76,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const teacherId = course.teachers.id;
 
-      // 1. Check for teacher conflict (for the same date, startTime, and endTime)
+      // 1. Check for teacher conflict
       const teacherConflict = await prisma.schedule.findFirst({
         where: {
-          course: {
-            teacherId: teacherId,
-          },
+          course: { teacherId: teacherId },
           date: new Date(date),
           OR: [
-            { startTime: { lte: new Date(endTime) }, endTime: { gte: new Date(startTime) } }  // Overlapping time
+            { startTime: { lte: parsedEndTime }, endTime: { gte: parsedStartTime } }  // Overlapping time
           ],
         },
       });
@@ -53,13 +93,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
       }
 
-      // 2. Check for room conflict (for the same date, startTime, and endTime)
+      // 2. Check for room conflict
       const roomConflict = await prisma.schedule.findFirst({
         where: {
           roomId: Number(roomId),
           date: new Date(date),
           OR: [
-            { startTime: { lte: new Date(endTime) }, endTime: { gte: new Date(startTime) } }  // Overlapping time
+            { startTime: { lte: parsedEndTime }, endTime: { gte: parsedStartTime } }  // Overlapping time
           ],
         },
       });
@@ -70,13 +110,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
       }
 
-      // 3. Check for course conflict (whether this course is already scheduled in another room)
+      // 3. Check for course conflict
       const courseConflict = await prisma.schedule.findFirst({
         where: {
           courseId: Number(courseId),
           date: new Date(date),
           OR: [
-            { startTime: { lte: new Date(endTime) }, endTime: { gte: new Date(startTime) } }  // Overlapping time
+            { startTime: { lte: parsedEndTime }, endTime: { gte: parsedStartTime } }  // Overlapping time
           ],
         },
       });
@@ -93,16 +133,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           courseId: Number(courseId),
           roomId: Number(roomId),
           date: new Date(date),
-          startTime: new Date(startTime),
-          endTime: new Date(endTime),
+          startTime: parsedStartTime,
+          endTime: parsedEndTime,
           isRecurring: Boolean(isRecurring),
-          recurrence: recurrence || null,  // Only add recurrence if it's provided
+          recurrence: recurrence || null,
         },
       });
 
-      res.status(201).json(newSchedule);
+      res.status(201).json({
+        ...newSchedule,
+        startTime: formatTime(newSchedule.startTime),
+        endTime: formatTime(newSchedule.endTime),
+      });
     } catch (error) {
-      console.error('Error creating schedule:', error); // Log error
+      console.error('Error creating schedule:', error);
       res.status(500).json({ error: 'Failed to create schedule' });
     }
   } else if (req.method === 'PUT') {
@@ -119,10 +163,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(404).json({ error: 'Schedule not found.' });
       }
 
+      // Validate input
+      if (!date || !startTime || !endTime) {
+        return res.status(400).json({ error: "Date and times must be provided." });
+      }
+
+      if (!isValidTimeFormat(startTime) || !isValidTimeFormat(endTime)) {
+        return res.status(400).json({ error: "Invalid start or end time format." });
+      }
+
+      const formattedStartTime = `${padTime(startTime.split(':')[0])}:${padTime(startTime.split(':')[1])}:00`;
+      const formattedEndTime = `${padTime(endTime.split(':')[0])}:${padTime(endTime.split(':')[1])}:00`;
+
+      const parsedStartTime = new Date(`${date}T${formattedStartTime}`);
+      const parsedEndTime = new Date(`${date}T${formattedEndTime}`);
+
+      // Check if date conversion is valid
+      if (isNaN(parsedStartTime.getTime()) || isNaN(parsedEndTime.getTime())) {
+        return res.status(400).json({ error: "Invalid start or end time format" });
+      }
+
       // Find the course to get the teacherId for the conflict check
       const course = await prisma.course.findUnique({
         where: { id: Number(courseId) },
-        include: { teachers: true }, // Get the teacher details
+        include: { teachers: true },
       });
 
       if (!course) {
@@ -134,14 +198,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // 1. Check for teacher conflict (excluding the current schedule)
       const teacherConflict = await prisma.schedule.findFirst({
         where: {
-          course: {
-            teacherId: teacherId,
-          },
+          course: { teacherId: teacherId },
           date: new Date(date),
           OR: [
-            { startTime: { lte: new Date(endTime) }, endTime: { gte: new Date(startTime) } }  // Overlapping time
+            { startTime: { lte: parsedEndTime }, endTime: { gte: parsedStartTime } }  // Overlapping time
           ],
-          NOT: { id: Number(id) },  // Exclude current schedule from conflict check
+          NOT: { id: Number(id) },
         },
       });
 
@@ -157,9 +219,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           roomId: Number(roomId),
           date: new Date(date),
           OR: [
-            { startTime: { lte: new Date(endTime) }, endTime: { gte: new Date(startTime) } }  // Overlapping time
+            { startTime: { lte: parsedEndTime }, endTime: { gte: parsedStartTime } }  // Overlapping time
           ],
-          NOT: { id: Number(id) },  // Exclude current schedule from conflict check
+          NOT: { id: Number(id) },
         },
       });
 
@@ -175,9 +237,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           courseId: Number(courseId),
           date: new Date(date),
           OR: [
-            { startTime: { lte: new Date(endTime) }, endTime: { gte: new Date(startTime) } }  // Overlapping time
+            { startTime: { lte: parsedEndTime }, endTime: { gte: parsedStartTime } }  // Overlapping time
           ],
-          NOT: { id: Number(id) },  // Exclude current schedule from conflict check
+          NOT: { id: Number(id) },
         },
       });
 
@@ -194,19 +256,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           courseId: Number(courseId),
           roomId: Number(roomId),
           date: new Date(date),
-          startTime: new Date(startTime),
-          endTime: new Date(endTime),
+          startTime: parsedStartTime,
+          endTime: parsedEndTime,
           isRecurring: Boolean(isRecurring),
           recurrence: recurrence || null,
         },
       });
 
-      res.status(200).json(updatedSchedule);
+      res.status(200).json({
+        ...updatedSchedule,
+        startTime: formatTime(updatedSchedule.startTime),
+        endTime: formatTime(updatedSchedule.endTime),
+      });
     } catch (error) {
-      console.error('Error updating schedule:', error); // Log error
+      console.error('Error updating schedule:', error);
       res.status(500).json({ error: 'Failed to update schedule' });
     }
+  } else if (req.method === 'DELETE') {
+    const { id } = req.query;
+
+    try {
+      const deletedSchedule = await prisma.schedule.delete({
+        where: { id: Number(id) },
+      });
+      res.status(204).json(deletedSchedule);
+    } catch (error) {
+      console.error('Error deleting schedule:', error);
+      res.status(500).json({ error: 'Failed to delete schedule' });
+    }
   } else {
-    res.status(405).json({ message: 'Method not allowed' });
+    res.setHeader('Allow', ['GET', 'POST', 'PUT', 'DELETE']);
+    res.status(405).end(`Method ${req.method} Not Allowed`);
   }
 }

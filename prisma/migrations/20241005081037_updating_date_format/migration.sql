@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE `schedule` MODIFY `date` VARCHAR(191) NOT NULL,
+    MODIFY `endTime` VARCHAR(191) NOT NULL,
+    MODIFY `startTime` VARCHAR(191) NOT NULL;

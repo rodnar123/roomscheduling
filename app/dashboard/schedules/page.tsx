@@ -11,8 +11,10 @@ interface Schedule {
   roomId: number;
   room: { name: string };
   date: string;
-  timeSlot: string;
-  time: string;
+  startTime: string;
+  endTime: string;
+  isRecurring: boolean;
+  recurrence: string | null;
 }
 
 const SchedulesPage = () => {
@@ -22,8 +24,10 @@ const SchedulesPage = () => {
   const [courseId, setCourseId] = useState("");
   const [roomId, setRoomId] = useState("");
   const [date, setDate] = useState("");
-  const [timeSlot, setTimeSlot] = useState("MORNING");
-  const [time, setTime] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [isRecurring, setIsRecurring] = useState(false); // Recurring checkbox
+  const [recurrence, setRecurrence] = useState("WEEKLY"); // Default to WEEKLY
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
 
   useEffect(() => {
@@ -66,8 +70,10 @@ const SchedulesPage = () => {
         courseId: parseInt(courseId),
         roomId: parseInt(roomId),
         date,
-        timeSlot,
-        time,
+        startTime,
+        endTime,
+        isRecurring: isRecurring,
+        recurrence: isRecurring ? recurrence : null, // Only include recurrence if recurring
       }),
     });
 
@@ -76,6 +82,10 @@ const SchedulesPage = () => {
       setCourseId("");
       setRoomId("");
       setDate("");
+      setStartTime("");
+      setEndTime("");
+      setIsRecurring(false);
+      setRecurrence("WEEKLY");
     } else {
       const { error } = await res.json();
       alert(error); // Show error message for conflicts
@@ -101,7 +111,10 @@ const SchedulesPage = () => {
         courseId: parseInt(courseId),
         roomId: parseInt(roomId),
         date,
-        timeSlot,
+        startTime,
+        endTime,
+        isRecurring,
+        recurrence: isRecurring ? recurrence : null,
       }),
     });
 
@@ -110,6 +123,10 @@ const SchedulesPage = () => {
       setCourseId("");
       setRoomId("");
       setDate("");
+      setStartTime("");
+      setEndTime("");
+      setIsRecurring(false);
+      setRecurrence("WEEKLY");
       setEditingSchedule(null);
     } else {
       const { error } = await res.json();
@@ -121,7 +138,10 @@ const SchedulesPage = () => {
     setCourseId(schedule.courseId.toString());
     setRoomId(schedule.roomId.toString());
     setDate(schedule.date.split("T")[0]); // Format date for input
-    setTimeSlot(schedule.timeSlot);
+    setStartTime(schedule.startTime);
+    setEndTime(schedule.endTime);
+    setIsRecurring(schedule.isRecurring);
+    setRecurrence(schedule.recurrence || "WEEKLY");
     setEditingSchedule(schedule);
   };
 
@@ -164,22 +184,40 @@ const SchedulesPage = () => {
           onChange={(e) => setDate(e.target.value)}
         />
 
-        <select
+        <input
+          type="time"
           className="border p-2 mr-2"
-          value={timeSlot}
-          onChange={(e) => setTimeSlot(e.target.value)}
-        >
-          <option value="MORNING">Morning</option>
-          <option value="AFTERNOON">Afternoon</option>
-          <option value="EVENING">Evening</option>
-        </select>
+          value={startTime}
+          onChange={(e) => setStartTime(e.target.value)}
+        />
 
         <input
           type="time"
           className="border p-2 mr-2"
-          value={time}
-          onChange={(e) => setTime(e.target.value)}
+          value={endTime}
+          onChange={(e) => setEndTime(e.target.value)}
         />
+
+        <label className="mr-2">
+          <input
+            type="checkbox"
+            checked={isRecurring}
+            onChange={(e) => setIsRecurring(e.target.checked)}
+            className="mr-1"
+          />
+          Recurring
+        </label>
+
+        {isRecurring && (
+          <select
+            className="border p-2 mr-2"
+            value={recurrence}
+            onChange={(e) => setRecurrence(e.target.value)}
+          >
+            <option value="WEEKLY">Weekly</option>
+            <option value="MONTHLY">Monthly</option>
+          </select>
+        )}
 
         {editingSchedule ? (
           <button
@@ -205,8 +243,9 @@ const SchedulesPage = () => {
             <th className="border p-2">Course</th>
             <th className="border p-2">Room</th>
             <th className="border p-2">Date</th>
-            <th className="border p-2">Time Slot</th>
-            <th className="border p-2">Time</th>
+            <th className="border p-2">Start Time</th>
+            <th className="border p-2">End Time</th>
+            <th className="border p-2">Recurring</th>
             <th className="border p-2">Actions</th>
             <th className="border p-2">QR Code</th>
           </tr>
@@ -219,12 +258,11 @@ const SchedulesPage = () => {
               <td className="border p-2">
                 {new Date(schedule.date).toLocaleDateString()}
               </td>
-              <td className="border p-2">{schedule.timeSlot}</td>
-              <td className="border p-2">{schedule.time}</td>
+              <td className="border p-2">{schedule.startTime}</td>
+              <td className="border p-2">{schedule.endTime}</td>
               <td className="border p-2">
-                <ScheduleQRCode scheduleId={schedule.id} />
+                {schedule.isRecurring ? schedule.recurrence : "No"}
               </td>
-
               <td className="border p-2">
                 <button
                   className="bg-yellow-500 text-white px-4 py-1 mr-2"
@@ -238,6 +276,9 @@ const SchedulesPage = () => {
                 >
                   Delete
                 </button>
+              </td>
+              <td className="border p-2">
+                <ScheduleQRCode scheduleId={schedule.id} />
               </td>
             </tr>
           ))}
